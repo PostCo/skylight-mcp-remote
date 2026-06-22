@@ -2,6 +2,12 @@
 
 Remote MCP deployment scaffold for [`skylight-mcp`](https://rubygems.org/gems/skylight-mcp), built on Cloudflare Workers plus Cloudflare Containers.
 
+Relevant upstream links:
+
+- Skylight: [https://skylight.io/](https://skylight.io/)
+- `skylight-mcp` on RubyGems: [https://rubygems.org/gems/skylight-mcp](https://rubygems.org/gems/skylight-mcp)
+- `skylight-mcp` on Ruby China: [https://gems.ruby-china.com/gems/skylight-mcp/](https://gems.ruby-china.com/gems/skylight-mcp/)
+
 This repo is for people who want to expose the Ruby `skylight-mcp` server through a hosted HTTP endpoint instead of running it locally over stdio.
 
 ## What It Does
@@ -11,6 +17,8 @@ This repo is for people who want to expose the Ruby `skylight-mcp` server throug
 - Forwards authenticated traffic to a containerized Node bridge.
 - Runs `gem exec skylight-mcp --token "$SKYLIGHT_MCP_TOKEN"` inside the container.
 - Adapts hosted MCP traffic into the stdio-based Ruby server.
+
+If you found this repo while searching for Skylight MCP, Skylight Ruby performance tooling, or the `skylight-mcp` gem, start with [Skylight](https://skylight.io/) and the package pages on [RubyGems](https://rubygems.org/gems/skylight-mcp) or [Ruby China](https://gems.ruby-china.com/gems/skylight-mcp/).
 
 ## MCP Behavior
 
