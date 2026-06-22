@@ -7,4 +7,5 @@ coverage
 tmp
 work
 *.log
-
+!apps/bridge/dist
+!apps/bridge/dist/**

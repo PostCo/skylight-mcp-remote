@@ -60,6 +60,12 @@ curl -i \
 
 1. Ensure Cloudflare Containers is enabled for the target account.
 2. Authenticate Wrangler.
+3. Build the workspace artifacts that the bridge image copies in:
+
+```bash
+npm run build
+```
+
 3. Set secrets:
 
 ```bash
@@ -67,7 +73,17 @@ npx wrangler@4.103.0 secret put MCP_SHARED_BEARER_TOKEN
 npx wrangler@4.103.0 secret put SKYLIGHT_MCP_TOKEN
 ```
 
-4. Deploy:
+4. Build and push an amd64 bridge image to Cloudflare's registry:
+
+```bash
+docker pull --platform linux/amd64 public.ecr.aws/docker/library/ruby:3.3-slim
+docker buildx build --platform linux/amd64 --load -t skylight-mcp-remote:amd64 .
+npx wrangler@4.103.0 containers push skylight-mcp-remote:amd64
+```
+
+5. Update `wrangler.jsonc` to the pushed image digest if it changed.
+
+6. Deploy:
 
 ```bash
 npx wrangler@4.103.0 deploy
@@ -78,7 +94,7 @@ npx wrangler@4.103.0 deploy
 Set helpers:
 
 ```bash
-export BASE_URL="https://<your-worker-subdomain>"
+export BASE_URL="https://skylight-mcp-remote.postco.workers.dev"
 export MCP_SHARED_BEARER_TOKEN="<your-shared-bearer-token>"
 ```
 
@@ -136,3 +152,49 @@ Success criteria:
 - Authenticated `initialize` returns `200` and an `mcp-session-id` header.
 - Authenticated `tools/list` returns a non-error JSON-RPC result.
 - At least one real `tools/call` returns a non-error JSON-RPC result backed by Skylight.
+
+## Verified 2026-06-22
+
+The deployment verified in this repo used:
+
+- Worker URL: `https://skylight-mcp-remote.postco.workers.dev`
+- Worker version: `2d8f2798-617e-4225-bc6b-c235922a2528`
+- Container image: `registry.cloudflare.com/6413bfbe023fbf879350a20fe7a2245b/skylight-mcp-remote@sha256:fa32552b0fd0292bcb92c95e1bce95f983588f0dfd2c70439cabd077b3693861`
+
+Verified commands:
+
+```bash
+curl -i "$BASE_URL/healthz"
+
+curl -i \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}' \
+  "$BASE_URL/mcp"
+
+curl -i \
+  -H "Authorization: Bearer $MCP_SHARED_BEARER_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}' \
+  "$BASE_URL/mcp"
+
+curl -i \
+  -H "Authorization: Bearer $MCP_SHARED_BEARER_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'mcp-session-id: <session-id>' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  "$BASE_URL/mcp"
+
+curl -i \
+  -H "Authorization: Bearer $MCP_SHARED_BEARER_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'mcp-session-id: <session-id>' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"select_app","arguments":{"app":"Project Tapir"}}}' \
+  "$BASE_URL/mcp"
+
+curl -i \
+  -H "Authorization: Bearer $MCP_SHARED_BEARER_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'mcp-session-id: <session-id>' \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_components","arguments":{}}}' \
+  "$BASE_URL/mcp"
+```

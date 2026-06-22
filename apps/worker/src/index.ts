@@ -12,12 +12,13 @@ type RuntimeEnv = Omit<WorkerEnv, "SKYLIGHT_BRIDGE"> & {
 
 export class SkylightBridgeContainer extends Container {
   defaultPort = 8080;
+  pingEndpoint = "localhost/healthz";
   sleepAfter = "5m";
 
   constructor(ctx: DurableObjectState<{}>, env: RuntimeEnv) {
     super(ctx, env);
 
-    this.entrypoint = ["node", "apps/bridge/dist/index.js"];
+    this.entrypoint = ["node", "/app/apps/bridge/dist/index.js"];
     this.envVars = {
       BRIDGE_REQUEST_TIMEOUT_MS: env.BRIDGE_REQUEST_TIMEOUT_MS ?? "30000",
       LOG_LEVEL: env.LOG_LEVEL ?? "info",
