@@ -1,0 +1,23 @@
+{
+  "name": "skylight-mcp-remote",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/bridge",
+    "apps/worker"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:bridge": "npm run build --workspace @skylight-mcp-remote/bridge",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck --workspaces",
+    "dev:bridge": "tsx apps/bridge/src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
