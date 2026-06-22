@@ -1,4 +1,5 @@
 {
+  // Update these values for your own account before deploying from a fork.
   "name": "skylight-mcp-remote",
   "main": "apps/worker/src/index.ts",
   "compatibility_date": "2026-06-22",
@@ -13,7 +14,8 @@
   "containers": [
     {
       "class_name": "SkylightBridgeContainer",
-      "image": "registry.cloudflare.com/6413bfbe023fbf879350a20fe7a2245b/skylight-mcp-remote@sha256:fa32552b0fd0292bcb92c95e1bce95f983588f0dfd2c70439cabd077b3693861",
+      // Replace this with the image digest from your own Cloudflare registry push.
+      "image": "registry.cloudflare.com/6413bfbe023fbf879350a20fe7a2245b/skylight-mcp-remote@sha256:30d5f9f99f8d45376c13a60dca2a4f1c5f2b462513e83e57852d191c70df7e92",
       "max_instances": 2,
       "name": "skylight-mcp-bridge"
     }

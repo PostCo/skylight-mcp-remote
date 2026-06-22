@@ -22,13 +22,21 @@ export function createWorkerHandler() {
       return new Response("Not Found", { status: 404 });
     }
 
+    if (request.method === "OPTIONS") {
+      return withCorsHeaders(request, new Response(null, { status: 204 }));
+    }
+
+    if (request.method === "HEAD" && isAuthorized(request, env.MCP_SHARED_BEARER_TOKEN)) {
+      return withCorsHeaders(request, new Response(null, { status: 200 }));
+    }
+
     if (!isAuthorized(request, env.MCP_SHARED_BEARER_TOKEN)) {
-      return new Response("Unauthorized", { status: 401 });
+      return withCorsHeaders(request, new Response("Unauthorized", { status: 401 }));
     }
 
     const proxiedRequest = stripSharedAuthHeader(request);
 
-    return env.SKYLIGHT_BRIDGE.fetch(proxiedRequest);
+    return withCorsHeaders(request, await env.SKYLIGHT_BRIDGE.fetch(proxiedRequest));
   };
 }
 
@@ -47,6 +55,26 @@ function stripSharedAuthHeader(request: Request): Request {
   headers.delete("authorization");
 
   return new Request(request, {
+    headers
+  });
+}
+
+function withCorsHeaders(request: Request, response: Response): Response {
+  const headers = new Headers(response.headers);
+  const origin = request.headers.get("origin") ?? "*";
+  const requestedHeaders =
+    request.headers.get("access-control-request-headers") ??
+    "Authorization, Content-Type, MCP-Session-Id, MCP-Protocol-Version, Mcp-Method";
+
+  headers.set("access-control-allow-origin", origin);
+  headers.set("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
+  headers.set("access-control-allow-headers", requestedHeaders);
+  headers.set("access-control-expose-headers", "MCP-Session-Id");
+  headers.append("vary", "Origin");
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
     headers
   });
 }

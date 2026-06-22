@@ -1,11 +1,24 @@
 {
   "name": "skylight-mcp-remote",
   "private": true,
+  "description": "Cloudflare-hosted remote MCP bridge for the skylight-mcp Ruby server",
+  "license": "MIT",
   "version": "0.1.0",
+  "homepage": "https://github.com/andychongyz/skylight-mcp-remote",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andychongyz/skylight-mcp-remote.git"
+  },
+  "bugs": {
+    "url": "https://github.com/andychongyz/skylight-mcp-remote/issues"
+  },
   "workspaces": [
     "apps/bridge",
     "apps/worker"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "npm run build --workspaces",
     "build:bridge": "npm run build --workspace @skylight-mcp-remote/bridge",

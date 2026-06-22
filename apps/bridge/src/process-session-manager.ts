@@ -92,12 +92,13 @@ export class ProcessSessionManager {
       throw new Error("SKYLIGHT_MCP_TOKEN is required.");
     }
 
-    const session = this.getOrCreateSession(sessionId);
     const requestId = message.id;
 
     if (requestId === undefined) {
       throw new Error("JSON-RPC request id is required.");
     }
+
+    const session = this.getOrCreateSession(sessionId);
 
     return new Promise<JsonRpcMessage>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -117,6 +118,26 @@ export class ProcessSessionManager {
 
       session.child.stdin.write(`${JSON.stringify(message)}\n`);
     });
+  }
+
+  hasSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
+  }
+
+  async sendNotification(
+    sessionId: string,
+    message: JsonRpcMessage
+  ): Promise<void> {
+    if (!this.skylightToken) {
+      throw new Error("SKYLIGHT_MCP_TOKEN is required.");
+    }
+
+    if (message.id !== undefined) {
+      throw new Error("JSON-RPC notification must not include an id.");
+    }
+
+    const session = this.getOrCreateSession(sessionId);
+    session.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   private getOrCreateSession(sessionId: string): SessionRecord {
