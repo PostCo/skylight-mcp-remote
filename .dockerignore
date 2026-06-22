@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+dist
+.wrangler
+coverage
+tmp
+work
+*.log
+

@@ -1,0 +1,36 @@
+{
+  "name": "skylight-mcp-remote",
+  "main": "apps/worker/src/index.ts",
+  "compatibility_date": "2026-06-22",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "BRIDGE_REQUEST_TIMEOUT_MS": "30000",
+    "LOG_LEVEL": "info",
+    "PORT": "8080"
+  },
+  "containers": [
+    {
+      "class_name": "SkylightBridgeContainer",
+      "image": "./Dockerfile",
+      "max_instances": 2,
+      "name": "skylight-mcp-bridge"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "SkylightBridgeContainer",
+        "name": "SKYLIGHT_BRIDGE"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SkylightBridgeContainer"]
+    }
+  ]
+}
+
