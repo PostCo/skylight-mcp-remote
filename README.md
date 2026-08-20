@@ -185,6 +185,31 @@ npx wrangler deploy --dry-run
 npx wrangler deploy
 ```
 
+## Concurrency Load Test
+
+`scripts/load-test.mjs` drives the deployed Worker with the real MCP SDK client:
+ten rounds of four simultaneous clients, each running `initialize`, the
+`initialized` notification, `tools/list`, a target selection call, representative
+read calls, and an explicit `DELETE` session termination. It exercises MCP only
+and never delegates Linear cards.
+
+Credentials are read from the environment and never printed:
+
+```bash
+export MCP_URL="https://<your-worker-subdomain>.workers.dev/mcp"
+export MCP_BEARER_TOKEN="<your-mastra-bearer-token>"
+export MCP_SELECT_TOOL="<application selection tool>"
+export MCP_SELECT_ARGS='{"app":"<app-id>"}'
+export MCP_READ_TOOLS="<read tool>,<read tool>"
+
+npm run load-test
+```
+
+`MCP_ROUNDS` and `MCP_CLIENTS` override the 10x4 default. The script exits
+non-zero if any client issues more than one `GET`, if a `GET` is answered with
+anything other than `405`, if any response is a `502`, or if any client run
+fails.
+
 ## Smoke Test
 
 Set helpers:
