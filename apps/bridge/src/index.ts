@@ -4,17 +4,27 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 
 import { createBridgeApp } from "./bridge-app.js";
+import { createLogger } from "./logger.js";
 import {
   ProcessSessionManager,
   type SpawnProcess
 } from "./process-session-manager.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8080", 10);
+// Skylight queries over large apps regularly run past a minute, so the default
+// budget is generous; the session is reset on expiry rather than left running.
 const requestTimeoutMs = Number.parseInt(
-  process.env.BRIDGE_REQUEST_TIMEOUT_MS ?? "30000",
+  process.env.BRIDGE_REQUEST_TIMEOUT_MS ?? "120000",
   10
 );
+const idleTimeoutMs = Number.parseInt(
+  process.env.SESSION_IDLE_TIMEOUT_MS ?? "300000",
+  10
+);
+const logger = createLogger(process.env.LOG_LEVEL ?? "info");
 const sessionManager = new ProcessSessionManager({
+  idleTimeoutMs,
+  logger,
   requestTimeoutMs,
   skylightToken: process.env.SKYLIGHT_MCP_TOKEN ?? "",
   spawn: ((command: string, args: string[]) =>
@@ -29,6 +39,9 @@ const server = createServer(async (req, res) => {
     const response = await app.handleRequest(request);
     await writeResponse(res, response);
   } catch (error) {
+    logger.error("bridge.request.unhandled", {
+      errorName: error instanceof Error ? error.name : "Error"
+    });
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain; charset=utf-8");
     res.end(error instanceof Error ? error.message : "Internal Server Error");
@@ -36,11 +49,19 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`Bridge listening on :${port}`);
+  logger.info("bridge.listening", {
+    port,
+    requestTimeoutMs,
+    idleTimeoutMs
+  });
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, async () => {
+    logger.info("bridge.shutdown", {
+      signal,
+      activeSessions: sessionManager.activeSessionCount
+    });
     await sessionManager.destroyAll();
     server.close(() => {
       process.exit(0);

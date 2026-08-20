@@ -2,13 +2,20 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createBridgeApp } from "../src/bridge-app.js";
+import {
+  createBridgeApp,
+  type BridgeSessionManager
+} from "../src/bridge-app.js";
 import { ProcessSessionManager } from "../src/process-session-manager.js";
 
 class FakeReadable extends EventEmitter {
   setEncoding() {
     return this;
   }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 class FakeWritable {
@@ -18,6 +25,19 @@ class FakeWritable {
     this.writes.push(chunk);
     return true;
   }
+}
+
+function createSessionManagerStub(
+  overrides: Partial<BridgeSessionManager> = {}
+): BridgeSessionManager & Record<string, any> {
+  return {
+    hasSession: vi.fn(() => false),
+    sendNotification: vi.fn(),
+    sendRequest: vi.fn(),
+    destroySession: vi.fn(),
+    destroyAll: vi.fn(),
+    ...overrides
+  } as BridgeSessionManager & Record<string, any>;
 }
 
 describe("createBridgeApp", () => {
@@ -229,7 +249,10 @@ describe("createBridgeApp", () => {
         tools: []
       }
     });
-    expect(destroySession).toHaveBeenCalledWith(sendRequest.mock.calls[0]?.[0]);
+    expect(destroySession).toHaveBeenCalledWith(
+      sendRequest.mock.calls[0]?.[0],
+      "ephemeral_complete"
+    );
   });
 
   it("answers HEAD requests on /mcp", async () => {
@@ -337,10 +360,14 @@ describe("createBridgeApp", () => {
     );
 
     expect(response.status).toBe(202);
-    expect(sendNotification).toHaveBeenCalledWith("session-123", {
-      jsonrpc: "2.0",
-      method: "notifications/initialized"
-    });
+    expect(sendNotification).toHaveBeenCalledWith(
+      "session-123",
+      {
+        jsonrpc: "2.0",
+        method: "notifications/initialized"
+      },
+      expect.anything()
+    );
   });
 
   it("bootstraps unknown provided session ids before forwarding notifications", async () => {
@@ -388,12 +415,17 @@ describe("createBridgeApp", () => {
       "session-unknown",
       expect.objectContaining({
         method: "initialize"
-      })
+      }),
+      expect.anything()
     );
-    expect(sendNotification).toHaveBeenCalledWith("session-unknown", {
-      jsonrpc: "2.0",
-      method: "notifications/initialized"
-    });
+    expect(sendNotification).toHaveBeenCalledWith(
+      "session-unknown",
+      {
+        jsonrpc: "2.0",
+        method: "notifications/initialized"
+      },
+      expect.anything()
+    );
   });
 });
 
@@ -426,6 +458,9 @@ describe("ProcessSessionManager", () => {
       method: "tools/list",
       params: {}
     });
+
+    // Requests are queued per session, so the spawn happens on the next tick.
+    await flushMicrotasks();
 
     expect(spawn).toHaveBeenCalledWith("gem", [
       "exec",
@@ -487,5 +522,26 @@ describe("ProcessSessionManager", () => {
         params: {}
       })
     ).rejects.toThrow("SKYLIGHT_MCP_TOKEN");
+  });
+});
+
+describe("bridge SSE listener is disabled", () => {
+  it("answers GET /mcp with 405 instead of an event stream", async () => {
+    const sessionManager = createSessionManagerStub();
+    const app = createBridgeApp({ sessionManager });
+
+    const response = await app.handleRequest(
+      new Request("http://bridge.local/mcp", {
+        method: "GET",
+        headers: { accept: "text/event-stream" }
+      })
+    );
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST, DELETE, HEAD");
+    expect(response.headers.get("content-type")).not.toContain(
+      "text/event-stream"
+    );
+    expect(sessionManager.sendRequest).not.toHaveBeenCalled();
   });
 });

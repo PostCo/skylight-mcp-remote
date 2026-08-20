@@ -1,18 +1,25 @@
 import { randomUUID } from "node:crypto";
 
-import type { JsonRpcMessage } from "./process-session-manager.js";
+import {
+  BridgeAbortedError,
+  BridgeTimeoutError,
+  type JsonRpcMessage,
+  type SendOptions
+} from "./process-session-manager.js";
 
 export type BridgeSessionManager = {
   destroyAll: () => Promise<void>;
-  destroySession: (sessionId: string) => Promise<void>;
+  destroySession: (sessionId: string, reason?: string) => Promise<void>;
   hasSession: (sessionId: string) => boolean;
   sendNotification: (
     sessionId: string,
-    message: JsonRpcMessage
+    message: JsonRpcMessage,
+    options?: SendOptions
   ) => Promise<void>;
   sendRequest: (
     sessionId: string,
-    message: JsonRpcMessage
+    message: JsonRpcMessage,
+    options?: SendOptions
   ) => Promise<JsonRpcMessage>;
 };
 
@@ -37,18 +44,29 @@ export function createBridgeApp(options: BridgeAppOptions) {
         return new Response(null, { status: 200 });
       }
 
-      if (request.method === "GET") {
-        return new Response(": skylight-mcp bridge ready\n\n", {
-          status: 200,
-          headers: {
-            "cache-control": "no-store",
-            "content-type": "text/event-stream"
-          }
-        });
+      // Explicit session termination: drop the Ruby child immediately instead
+      // of waiting for the idle sweep.
+      if (request.method === "DELETE") {
+        const sessionId = request.headers.get("mcp-session-id");
+
+        if (!sessionId) {
+          return new Response("Missing MCP-Session-Id header.", {
+            status: 400
+          });
+        }
+
+        await options.sessionManager.destroySession(sessionId, "client_delete");
+
+        return new Response(null, { status: 204 });
       }
 
+      // Defense in depth: the Worker already answers GET with 405, but the
+      // bridge must never open an SSE stream it cannot feed from a stdio child.
       if (request.method !== "POST") {
-        return new Response("Method Not Allowed", { status: 405 });
+        return new Response("Method Not Allowed", {
+          status: 405,
+          headers: { allow: "POST, DELETE, HEAD" }
+        });
       }
 
       let message: JsonRpcMessage;
@@ -72,16 +90,28 @@ export function createBridgeApp(options: BridgeAppOptions) {
         existingSessionId ??
         `session-${randomUUID()}`;
 
+      const sendOptions: SendOptions = { signal: request.signal };
+
       try {
         const needsBootstrap =
           !isInitialize && !options.sessionManager.hasSession(sessionId);
 
         if (isEphemeralRequest || needsBootstrap) {
-          await bootstrapEphemeralSession(request, sessionId, options, message);
+          await bootstrapEphemeralSession(
+            request,
+            sessionId,
+            options,
+            message,
+            sendOptions
+          );
         }
 
         if (isNotification) {
-          await options.sessionManager.sendNotification(sessionId, message);
+          await options.sessionManager.sendNotification(
+            sessionId,
+            message,
+            sendOptions
+          );
 
           return new Response(null, {
             status: 202
@@ -92,7 +122,8 @@ export function createBridgeApp(options: BridgeAppOptions) {
           message,
           await options.sessionManager.sendRequest(
             sessionId,
-            message
+            message,
+            sendOptions
           )
         );
         const headers = new Headers({
@@ -108,38 +139,63 @@ export function createBridgeApp(options: BridgeAppOptions) {
           headers
         });
       } catch (error) {
-        return new Response(
-          error instanceof Error ? error.message : "Upstream bridge failure.",
-          { status: 502 }
-        );
+        return toErrorResponse(error);
       } finally {
         if (isEphemeralRequest) {
-          await options.sessionManager.destroySession(sessionId);
+          await options.sessionManager.destroySession(
+            sessionId,
+            "ephemeral_complete"
+          );
         }
       }
     }
   };
 }
 
+/**
+ * Maps failures onto statuses the caller can act on: 504 means the Ruby child
+ * was too slow and its session has already been reset, 502 means the child
+ * itself failed, and 499 means the caller hung up first.
+ */
+function toErrorResponse(error: unknown): Response {
+  if (error instanceof BridgeTimeoutError) {
+    return new Response(error.message, { status: 504 });
+  }
+
+  if (error instanceof BridgeAbortedError) {
+    return new Response(error.message, { status: 499 });
+  }
+
+  return new Response(
+    error instanceof Error ? error.message : "Upstream bridge failure.",
+    { status: 502 }
+  );
+}
+
 async function bootstrapEphemeralSession(
   request: Request,
   sessionId: string,
   options: BridgeAppOptions,
-  message: JsonRpcMessage
+  message: JsonRpcMessage,
+  sendOptions: SendOptions
 ): Promise<void> {
-  await options.sessionManager.sendRequest(sessionId, {
-    jsonrpc: "2.0",
-    id: `bootstrap-${randomUUID()}`,
-    method: "initialize",
-    params: {
-      protocolVersion: getBootstrapProtocolVersion(request, message),
-      capabilities: {},
-      clientInfo: {
-        name: "skylight-mcp-remote-bridge",
-        version: "0.1.0"
+  await options.sessionManager.sendRequest(
+    sessionId,
+    {
+      jsonrpc: "2.0",
+      id: `bootstrap-${randomUUID()}`,
+      method: "initialize",
+      params: {
+        protocolVersion: getBootstrapProtocolVersion(request, message),
+        capabilities: {},
+        clientInfo: {
+          name: "skylight-mcp-remote-bridge",
+          version: "0.1.0"
+        }
       }
-    }
-  });
+    },
+    sendOptions
+  );
 }
 
 function getBootstrapProtocolVersion(

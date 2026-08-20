@@ -1,23 +1,37 @@
 {
-  // Update these values for your own account before deploying from a fork.
-  "name": "skylight-mcp-remote",
+  "name": "mastra-skylight-mcp",
+  "account_id": "6413bfbe023fbf879350a20fe7a2245b",
   "main": "apps/worker/src/index.ts",
   "compatibility_date": "2026-06-22",
   "observability": {
     "enabled": true
   },
   "vars": {
-    "BRIDGE_REQUEST_TIMEOUT_MS": "30000",
+    // Skylight queries over a large app routinely run past a minute.
+    "BRIDGE_REQUEST_TIMEOUT_MS": "120000",
+    // Idle MCP sessions are reclaimed after five minutes.
+    "SESSION_IDLE_TIMEOUT_MS": "300000",
+    // Comma-separated browser origins allowed to call /mcp. Server-to-server
+    // callers such as Mastra send no Origin header and are unaffected; any
+    // other Origin is rejected rather than reflected.
+    "ALLOWED_ORIGINS": "",
     "LOG_LEVEL": "info",
     "PORT": "8080"
   },
   "containers": [
     {
+      // Built from this repository's Dockerfile and pushed to the Cloudflare
+      // registry on deploy, so there is no hard-coded upstream image digest.
+      "image": "./Dockerfile",
       "class_name": "SkylightBridgeContainer",
-      // Replace this with the image digest from your own Cloudflare registry push.
-      "image": "registry.cloudflare.com/6413bfbe023fbf879350a20fe7a2245b/skylight-mcp-remote@sha256:30d5f9f99f8d45376c13a60dca2a4f1c5f2b462513e83e57852d191c70df7e92",
-      "max_instances": 2,
-      "name": "skylight-mcp-bridge"
+      "name": "mastra-skylight-mcp-bridge",
+      // standard-1 is 1/2 vCPU, 4 GiB memory and 8 GB disk. Leaving the type
+      // unset would fall back to lite (1/16 vCPU, 256 MiB), which cannot hold
+      // four concurrent Ruby skylight-mcp children.
+      "instance_type": "standard-1",
+      // One instance keeps all sessions on a single bridge process, so session
+      // affinity and the active-session count stay meaningful.
+      "max_instances": 1
     }
   ],
   "durable_objects": {

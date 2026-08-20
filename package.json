@@ -1,16 +1,16 @@
 {
-  "name": "skylight-mcp-remote",
+  "name": "mastra-skylight-mcp",
   "private": true,
-  "description": "Cloudflare-hosted remote MCP bridge for the skylight-mcp Ruby server",
+  "description": "Cloudflare-hosted remote MCP bridge for the skylight-mcp Ruby server, sized for concurrent Mastra investigation sessions",
   "license": "MIT",
   "version": "0.1.0",
-  "homepage": "https://github.com/andychongyz/skylight-mcp-remote",
+  "homepage": "https://github.com/PostCo/skylight-mcp-remote",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/andychongyz/skylight-mcp-remote.git"
+    "url": "git+https://github.com/PostCo/skylight-mcp-remote.git"
   },
   "bugs": {
-    "url": "https://github.com/andychongyz/skylight-mcp-remote/issues"
+    "url": "https://github.com/PostCo/skylight-mcp-remote/issues"
   },
   "workspaces": [
     "apps/bridge",
@@ -25,9 +25,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces",
-    "dev:bridge": "tsx apps/bridge/src/index.ts"
+    "dev:bridge": "tsx apps/bridge/src/index.ts",
+    "load-test": "node scripts/load-test.mjs"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^24.0.10",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
