@@ -7,7 +7,7 @@ export type WorkerEnv = {
   SKYLIGHT_BRIDGE: ContainerBinding;
 };
 
-const ALLOWED_MCP_METHODS = "POST, HEAD, OPTIONS";
+const ALLOWED_MCP_METHODS = "POST, DELETE, HEAD, OPTIONS";
 
 export function createWorkerHandler() {
   return async function handleRequest(

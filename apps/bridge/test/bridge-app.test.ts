@@ -14,6 +14,10 @@ class FakeReadable extends EventEmitter {
   }
 }
 
+async function flushMicrotasks(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 class FakeWritable {
   writes: string[] = [];
 
@@ -245,7 +249,10 @@ describe("createBridgeApp", () => {
         tools: []
       }
     });
-    expect(destroySession).toHaveBeenCalledWith(sendRequest.mock.calls[0]?.[0]);
+    expect(destroySession).toHaveBeenCalledWith(
+      sendRequest.mock.calls[0]?.[0],
+      "ephemeral_complete"
+    );
   });
 
   it("answers HEAD requests on /mcp", async () => {
@@ -353,10 +360,14 @@ describe("createBridgeApp", () => {
     );
 
     expect(response.status).toBe(202);
-    expect(sendNotification).toHaveBeenCalledWith("session-123", {
-      jsonrpc: "2.0",
-      method: "notifications/initialized"
-    });
+    expect(sendNotification).toHaveBeenCalledWith(
+      "session-123",
+      {
+        jsonrpc: "2.0",
+        method: "notifications/initialized"
+      },
+      expect.anything()
+    );
   });
 
   it("bootstraps unknown provided session ids before forwarding notifications", async () => {
@@ -404,12 +415,17 @@ describe("createBridgeApp", () => {
       "session-unknown",
       expect.objectContaining({
         method: "initialize"
-      })
+      }),
+      expect.anything()
     );
-    expect(sendNotification).toHaveBeenCalledWith("session-unknown", {
-      jsonrpc: "2.0",
-      method: "notifications/initialized"
-    });
+    expect(sendNotification).toHaveBeenCalledWith(
+      "session-unknown",
+      {
+        jsonrpc: "2.0",
+        method: "notifications/initialized"
+      },
+      expect.anything()
+    );
   });
 });
 
@@ -442,6 +458,9 @@ describe("ProcessSessionManager", () => {
       method: "tools/list",
       params: {}
     });
+
+    // Requests are queued per session, so the spawn happens on the next tick.
+    await flushMicrotasks();
 
     expect(spawn).toHaveBeenCalledWith("gem", [
       "exec",
@@ -519,7 +538,7 @@ describe("bridge SSE listener is disabled", () => {
     );
 
     expect(response.status).toBe(405);
-    expect(response.headers.get("allow")).toBe("POST, HEAD");
+    expect(response.headers.get("allow")).toBe("POST, DELETE, HEAD");
     expect(response.headers.get("content-type")).not.toContain(
       "text/event-stream"
     );

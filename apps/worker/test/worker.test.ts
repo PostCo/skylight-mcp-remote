@@ -188,7 +188,7 @@ describe("createWorkerHandler", () => {
       "https://linear.app"
     );
     expect(response.headers.get("access-control-allow-methods")).toBe(
-      "POST, HEAD, OPTIONS"
+      "POST, DELETE, HEAD, OPTIONS"
     );
     expect(response.headers.get("access-control-allow-headers")).toBe(
       "authorization,content-type,mcp-session-id,mcp-protocol-version,mcp-method"
@@ -217,7 +217,7 @@ describe("MCP SSE listener is disabled", () => {
     });
 
     expect(response.status).toBe(405);
-    expect(response.headers.get("allow")).toBe("POST, HEAD, OPTIONS");
+    expect(response.headers.get("allow")).toBe("POST, DELETE, HEAD, OPTIONS");
     expect(response.headers.get("content-type")).not.toContain(
       "text/event-stream"
     );
@@ -256,7 +256,7 @@ describe("MCP SSE listener is disabled", () => {
     );
 
     expect(response.headers.get("access-control-allow-methods")).toBe(
-      "POST, HEAD, OPTIONS"
+      "POST, DELETE, HEAD, OPTIONS"
     );
   });
 
@@ -285,6 +285,57 @@ describe("MCP SSE listener is disabled", () => {
 
     expect(getAttempts).toBe(1);
     expect(listening).toBe(false);
+    expect(bridge.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("session termination", () => {
+  it("forwards an authenticated DELETE /mcp to the bridge", async () => {
+    const bridge = {
+      fetch: vi.fn(async (request: Request) => {
+        expect(request.method).toBe("DELETE");
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("mcp-session-id")).toBe("session-abc");
+
+        return new Response(null, { status: 204 });
+      })
+    };
+    const handler = createWorkerHandler();
+
+    const response = await handler(
+      new Request("https://example.com/mcp", {
+        method: "DELETE",
+        headers: {
+          authorization: "Bearer shared-secret",
+          "mcp-session-id": "session-abc"
+        }
+      }),
+      {
+        MCP_SHARED_BEARER_TOKEN: "shared-secret",
+        SKYLIGHT_BRIDGE: bridge
+      }
+    );
+
+    expect(response.status).toBe(204);
+    expect(bridge.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("does not let an unauthenticated caller destroy a session", async () => {
+    const bridge = { fetch: vi.fn() };
+    const handler = createWorkerHandler();
+
+    const response = await handler(
+      new Request("https://example.com/mcp", {
+        method: "DELETE",
+        headers: { "mcp-session-id": "session-abc" }
+      }),
+      {
+        MCP_SHARED_BEARER_TOKEN: "shared-secret",
+        SKYLIGHT_BRIDGE: bridge
+      }
+    );
+
+    expect(response.status).toBe(401);
     expect(bridge.fetch).not.toHaveBeenCalled();
   });
 });
