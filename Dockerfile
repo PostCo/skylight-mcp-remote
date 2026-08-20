@@ -4,7 +4,10 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates nodejs \
   && rm -rf /var/lib/apt/lists/*
 
-RUN gem install skylight-mcp --no-document
+# Pinned so a future gem release cannot change tool behaviour under a running
+# investigation. Bump deliberately after re-running the concurrency tests.
+ARG SKYLIGHT_MCP_VERSION=0.1.0
+RUN gem install skylight-mcp --version "${SKYLIGHT_MCP_VERSION}" --no-document
 
 WORKDIR /app
 

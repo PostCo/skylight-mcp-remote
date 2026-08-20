@@ -28,7 +28,22 @@ The bridge is intentionally tolerant of real hosted-client behavior:
 - `HEAD /mcp` returns `200` for authenticated reachability checks.
 - `POST /mcp` supports standard JSON-RPC requests such as `initialize`, `tools/list`, and `tools/call`.
 - `notifications/initialized` is accepted as a notification and returns `202`.
+- `DELETE /mcp` with an `MCP-Session-Id` header terminates the session, kills its Ruby child process, and returns `204`.
+- `GET /mcp` returns `405 Method Not Allowed`. The Ruby server is stdio-only and never initiates messages, so there is no SSE stream to listen on. Clients must treat this as terminal and not reconnect.
 - If a client sends follow-up traffic without a local in-memory session, the bridge bootstraps a replacement session before forwarding the request.
+
+### Sessions, Timeouts, And Status Codes
+
+- Calls within one MCP session are serialized, because application and component selection in `skylight-mcp` is stateful. Different sessions run concurrently, one Ruby child process each.
+- A session is destroyed by `DELETE /mcp`, by idle expiry after `SESSION_IDLE_TIMEOUT_MS`, or when its child exits.
+- When a request exceeds `BRIDGE_REQUEST_TIMEOUT_MS` or its HTTP connection is aborted, the bridge sends `notifications/cancelled` and terminates that session's Ruby process, so no timed-out operation keeps running. The next request for that session id starts a clean replacement.
+
+| Status | Meaning |
+| --- | --- |
+| `405` | `GET /mcp`: SSE listening is not supported. |
+| `499` | The caller aborted the HTTP connection; the session was reset. |
+| `502` | The Ruby child process failed or exited. |
+| `504` | The bridge timed out waiting for the child; the session was reset. |
 
 ## Architecture
 
@@ -60,13 +75,49 @@ Required secrets:
 - `MCP_SHARED_BEARER_TOKEN`
 - `SKYLIGHT_MCP_TOKEN`
 
+Both are stored as Worker secrets and are never committed:
+
+```bash
+npx wrangler secret put MCP_SHARED_BEARER_TOKEN
+npx wrangler secret put SKYLIGHT_MCP_TOKEN
+```
+
+Use a bearer token dedicated to this Worker. Do not reuse the token of another
+MCP Worker, so either side can be rotated or revoked on its own.
+
 Optional environment variables:
 
 - `PORT` default `8080`
 - `LOG_LEVEL` default `info`
-- `BRIDGE_REQUEST_TIMEOUT_MS` default `30000`
+- `BRIDGE_REQUEST_TIMEOUT_MS` default `120000`
+- `SESSION_IDLE_TIMEOUT_MS` default `300000`
+- `ALLOWED_ORIGINS` default empty; comma-separated list of browser origins allowed to call `/mcp`. A request carrying any other `Origin` is rejected with `403` rather than having its origin reflected. Server-to-server clients send no `Origin` header and are unaffected.
 
 `.env.example` contains the expected variable names for local development.
+
+### Container Sizing
+
+`wrangler.jsonc` pins `instance_type: "standard-1"` (1/2 vCPU, 4 GiB memory, 8 GB
+disk) with `max_instances: 1`. Leaving `instance_type` unset falls back to `lite`
+(1/16 vCPU, 256 MiB), which cannot hold four concurrent Ruby `skylight-mcp`
+children. Re-check the current sizes in the
+[Cloudflare instance type documentation](https://developers.cloudflare.com/containers/platform-details/limits/)
+before changing this.
+
+The container image is built from this repository's `Dockerfile` on deploy, and
+the `skylight-mcp` gem version is pinned via the `SKYLIGHT_MCP_VERSION` build arg.
+
+### Logging
+
+The bridge emits one JSON object per line covering session creation and
+destruction, active session count, operation name, duration, timeouts, child
+exits, and the cleanup reason. Bearer tokens, Skylight tokens, request payloads
+and raw tool responses are never logged. Raise `LOG_LEVEL` to `debug` for
+per-notification detail.
+
+`/healthz` is deliberately cheap: it confirms only that the bridge process is
+accepting HTTP requests. It does not spawn a Ruby child, does not contact
+Skylight, and a `200` therefore says nothing about whether MCP calls succeed.
 
 ## Local Development
 
@@ -113,22 +164,22 @@ npx wrangler secret put MCP_SHARED_BEARER_TOKEN
 npx wrangler secret put SKYLIGHT_MCP_TOKEN
 ```
 
-4. Build and push the bridge image:
+4. Review the account-specific values in `wrangler.jsonc` before deploy:
 
-```bash
-docker buildx build --platform linux/amd64 --load -t skylight-mcp-remote:amd64 .
-npx wrangler containers push skylight-mcp-remote:amd64
-```
-
-5. Update `wrangler.jsonc` with your pushed image digest.
-
-6. Review the account-specific values in `wrangler.jsonc` before deploy:
-
+- `account_id`
 - Worker `name`
 - container `name`
-- registry image reference under `containers[].image`
 
-7. Deploy:
+`wrangler deploy` builds the `Dockerfile` and pushes it to your account's
+Cloudflare registry, so no image digest has to be maintained by hand.
+
+5. Verify without deploying:
+
+```bash
+npx wrangler deploy --dry-run
+```
+
+6. Deploy:
 
 ```bash
 npx wrangler deploy

@@ -24,6 +24,7 @@ describe("createWorkerHandler", () => {
         })
       }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -86,6 +87,7 @@ describe("createWorkerHandler", () => {
         })
       }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -122,6 +124,7 @@ describe("createWorkerHandler", () => {
     const response = await handler(
       new Request("https://example.com/healthz"),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -149,6 +152,7 @@ describe("createWorkerHandler", () => {
         }
       }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -178,6 +182,7 @@ describe("createWorkerHandler", () => {
         }
       }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -212,6 +217,7 @@ describe("MCP SSE listener is disabled", () => {
     const handler = createWorkerHandler();
 
     const response = await handler(authorizedGet(), {
+      ALLOWED_ORIGINS: "https://linear.app",
       MCP_SHARED_BEARER_TOKEN: "shared-secret",
       SKYLIGHT_BRIDGE: bridge
     });
@@ -231,6 +237,7 @@ describe("MCP SSE listener is disabled", () => {
     const response = await handler(
       new Request("https://example.com/mcp", { method: "GET" }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -250,6 +257,7 @@ describe("MCP SSE listener is disabled", () => {
         headers: { origin: "https://linear.app" }
       }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -264,6 +272,7 @@ describe("MCP SSE listener is disabled", () => {
     const bridge = { fetch: vi.fn() };
     const handler = createWorkerHandler();
     const env = {
+      ALLOWED_ORIGINS: "https://linear.app",
       MCP_SHARED_BEARER_TOKEN: "shared-secret",
       SKYLIGHT_BRIDGE: bridge
     };
@@ -311,6 +320,7 @@ describe("session termination", () => {
         }
       }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -330,6 +340,7 @@ describe("session termination", () => {
         headers: { "mcp-session-id": "session-abc" }
       }),
       {
+        ALLOWED_ORIGINS: "https://linear.app",
         MCP_SHARED_BEARER_TOKEN: "shared-secret",
         SKYLIGHT_BRIDGE: bridge
       }
@@ -337,5 +348,78 @@ describe("session termination", () => {
 
     expect(response.status).toBe(401);
     expect(bridge.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("origin hardening", () => {
+  it("rejects an origin that is not on the allowlist", async () => {
+    const bridge = { fetch: vi.fn() };
+    const handler = createWorkerHandler();
+
+    const response = await handler(
+      new Request("https://example.com/mcp", {
+        method: "POST",
+        headers: {
+          origin: "https://evil.example",
+          authorization: "Bearer shared-secret",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })
+      }),
+      {
+        ALLOWED_ORIGINS: "https://linear.app",
+        MCP_SHARED_BEARER_TOKEN: "shared-secret",
+        SKYLIGHT_BRIDGE: bridge
+      }
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(bridge.fetch).not.toHaveBeenCalled();
+  });
+
+  it("never reflects an arbitrary origin back to the caller", async () => {
+    const bridge = { fetch: vi.fn() };
+    const handler = createWorkerHandler();
+
+    const response = await handler(
+      new Request("https://example.com/mcp", {
+        method: "OPTIONS",
+        headers: { origin: "https://evil.example" }
+      }),
+      {
+        MCP_SHARED_BEARER_TOKEN: "shared-secret",
+        SKYLIGHT_BRIDGE: bridge
+      }
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("allows server-to-server callers that send no Origin header", async () => {
+    const bridge = {
+      fetch: vi.fn(async () => new Response("{}", { status: 200 }))
+    };
+    const handler = createWorkerHandler();
+
+    const response = await handler(
+      new Request("https://example.com/mcp", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer shared-secret",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })
+      }),
+      {
+        MCP_SHARED_BEARER_TOKEN: "shared-secret",
+        SKYLIGHT_BRIDGE: bridge
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(bridge.fetch).toHaveBeenCalledOnce();
   });
 });
