@@ -37,18 +37,13 @@ export function createBridgeApp(options: BridgeAppOptions) {
         return new Response(null, { status: 200 });
       }
 
-      if (request.method === "GET") {
-        return new Response(": skylight-mcp bridge ready\n\n", {
-          status: 200,
-          headers: {
-            "cache-control": "no-store",
-            "content-type": "text/event-stream"
-          }
-        });
-      }
-
+      // Defense in depth: the Worker already answers GET with 405, but the
+      // bridge must never open an SSE stream it cannot feed from a stdio child.
       if (request.method !== "POST") {
-        return new Response("Method Not Allowed", { status: 405 });
+        return new Response("Method Not Allowed", {
+          status: 405,
+          headers: { allow: "POST, HEAD" }
+        });
       }
 
       let message: JsonRpcMessage;

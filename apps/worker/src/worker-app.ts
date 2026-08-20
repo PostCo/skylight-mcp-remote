@@ -7,6 +7,8 @@ export type WorkerEnv = {
   SKYLIGHT_BRIDGE: ContainerBinding;
 };
 
+const ALLOWED_MCP_METHODS = "POST, HEAD, OPTIONS";
+
 export function createWorkerHandler() {
   return async function handleRequest(
     request: Request,
@@ -34,10 +36,27 @@ export function createWorkerHandler() {
       return withCorsHeaders(request, new Response("Unauthorized", { status: 401 }));
     }
 
+    // The Ruby skylight-mcp server is stdio-only, so there is no server-initiated
+    // SSE stream to listen on. Answer GET at the edge with a terminal 405 so MCP
+    // clients disable the listener instead of entering a reconnect loop, and so
+    // the request never reaches the container.
+    if (request.method === "GET") {
+      return withCorsHeaders(request, methodNotAllowed());
+    }
+
     const proxiedRequest = stripSharedAuthHeader(request);
 
     return withCorsHeaders(request, await env.SKYLIGHT_BRIDGE.fetch(proxiedRequest));
   };
+}
+
+function methodNotAllowed(): Response {
+  return new Response("Method Not Allowed", {
+    status: 405,
+    headers: {
+      allow: ALLOWED_MCP_METHODS
+    }
+  });
 }
 
 function isAuthorized(request: Request, expectedToken: string): boolean {
@@ -67,7 +86,7 @@ function withCorsHeaders(request: Request, response: Response): Response {
     "Authorization, Content-Type, MCP-Session-Id, MCP-Protocol-Version, Mcp-Method";
 
   headers.set("access-control-allow-origin", origin);
-  headers.set("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
+  headers.set("access-control-allow-methods", ALLOWED_MCP_METHODS);
   headers.set("access-control-allow-headers", requestedHeaders);
   headers.set("access-control-expose-headers", "MCP-Session-Id");
   headers.append("vary", "Origin");

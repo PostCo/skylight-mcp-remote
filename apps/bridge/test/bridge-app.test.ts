@@ -2,7 +2,10 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createBridgeApp } from "../src/bridge-app.js";
+import {
+  createBridgeApp,
+  type BridgeSessionManager
+} from "../src/bridge-app.js";
 import { ProcessSessionManager } from "../src/process-session-manager.js";
 
 class FakeReadable extends EventEmitter {
@@ -18,6 +21,19 @@ class FakeWritable {
     this.writes.push(chunk);
     return true;
   }
+}
+
+function createSessionManagerStub(
+  overrides: Partial<BridgeSessionManager> = {}
+): BridgeSessionManager & Record<string, any> {
+  return {
+    hasSession: vi.fn(() => false),
+    sendNotification: vi.fn(),
+    sendRequest: vi.fn(),
+    destroySession: vi.fn(),
+    destroyAll: vi.fn(),
+    ...overrides
+  } as BridgeSessionManager & Record<string, any>;
 }
 
 describe("createBridgeApp", () => {
@@ -487,5 +503,26 @@ describe("ProcessSessionManager", () => {
         params: {}
       })
     ).rejects.toThrow("SKYLIGHT_MCP_TOKEN");
+  });
+});
+
+describe("bridge SSE listener is disabled", () => {
+  it("answers GET /mcp with 405 instead of an event stream", async () => {
+    const sessionManager = createSessionManagerStub();
+    const app = createBridgeApp({ sessionManager });
+
+    const response = await app.handleRequest(
+      new Request("http://bridge.local/mcp", {
+        method: "GET",
+        headers: { accept: "text/event-stream" }
+      })
+    );
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST, HEAD");
+    expect(response.headers.get("content-type")).not.toContain(
+      "text/event-stream"
+    );
+    expect(sessionManager.sendRequest).not.toHaveBeenCalled();
   });
 });
